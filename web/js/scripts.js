@@ -71,8 +71,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
         Object.keys(vehicles).forEach((key) => {
             const vehicle = vehicles[key];
-
-            console.log(JSON.stringify(vehicle));
             const li = document.createElement("li");
             li.setAttribute("class", "list-item")
     
@@ -110,9 +108,12 @@ document.addEventListener("DOMContentLoaded", () => {
                                         plate: vehicle.plate,
                                         factionId: factionId
                                     })
-                                }).then(() => {
-                                    v.remove();
-                                }).catch(err => console.log(err));
+                                })
+                                .then((response) => response.json())
+                                .then((response) => {
+                                    if (response.status) v.remove();
+                                })
+                                .catch(err => console.log(err));
                             }else{
                                 fetch(`https://${GetParentResourceName()}/takeout`, {
                                     method: "POST",
@@ -175,7 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.status){
             if (data.vehicles){
                 app.style.display = "flex";
-                console.log(JSON.stringify(data.vehicles))
                 createMenu(data.vehicles, data.faction);
             }
         }else{

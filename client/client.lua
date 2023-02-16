@@ -19,19 +19,6 @@ function openUI(vehicles, faction)
     })
 end
 
-function spawnVehicle(plate, properties, zone)
-    local garageId = currentVehicles[plate].garageId
-    local modelHash = GetHashKey(currentVehicles[plate].model)
-    local parkingZone = zone and zone or config.locations[garageId].parkingZones
-
-    for _, v in pairs(parkingZone) do
-        if (IsSpawnPointClear({ x = v.x, y = v.y, z = v.z }, 2.5)) then
-            TriggerServerEvent("galaxy-garage:spawnVehicle", modelHash, v, properties)
-            return
-        end
-    end
-end
-
 RegisterNUICallback("impound", function(data, cb)
     if (not data.plate) then return cb({}) end
 
@@ -62,13 +49,27 @@ RegisterNUICallback("takeout", function(data, cb)
 
     local timeout = 300
 
-    Callback.TriggerServerCallback("galaxy-garage:takeVehicleOutFromGarage", function(status, properties)
-        if (status) then
-            spawnVehicle(data.plate, properties)
-        end
+    local found = false
+    local garageId = currentVehicles[data.plate].garageId
 
+    for _, v in pairs(config.locations[garageId].parkingZones) do
+        if (IsSpawnPointClear({x = v.x, y = v.y, z = v.z}, 2.5)) then
+            found = true
+            Callback.TriggerServerCallback("galaxy-garage:takeVehicleOutFromGarage", function(status, properties)
+                if (status) then
+                    TriggerServerEvent("galaxy-garage:spawnVehicle", GetHashKey(currentVehicles[data.plate].model), v, properties)
+                end
+
+                timeout = 0
+            end, data.garageId, data.plate)
+            break
+        end
+    end
+
+    if (not found) then
+        exports["notification"]:createNotification({type = "error", text = "Jelenleg nincs üres parkolóhely!", duration = 5})
         timeout = 0
-    end, data.garageId, data.plate)
+    end
 
     while (timeout > 0) do
         timeout = timeout - 1
@@ -84,21 +85,35 @@ RegisterNUICallback("factionTakeout", function(data, cb)
     if (not data.factionId) then return cb({}) end
 
     local timeout = 300
+    local found = false
+    Callback.TriggerServerCallback("galaxy-garage:getZone", function(zones)
+        for _, v in pairs(zones) do
+            if (IsSpawnPointClear({ x = v.x, y = v.y, z = v.z }, 2.5)) then
+                found = true
+                Callback.TriggerServerCallback("galaxy-garage:takeVehicleOutFromFactionGarage", function(status, properties)
+                    if (status) then
+                        TriggerServerEvent("galaxy-garage:spawnVehicle", GetHashKey(currentVehicles[data.plate].model), v, properties)
+                    end
+                    timeout = 0
+                end, data.garageId, data.plate, data.factionId)
 
-    Callback.TriggerServerCallback("galaxy-garage:takeVehicleOutFromFactionGarage", function(status, properties, parkingZones)
-        if (status) then
-            spawnVehicle(data.plate, properties, parkingZones)
+                break
+            end
+
         end
 
-        timeout = 0
-    end, data.garageId, data.plate, data.factionId)
+        if (not found) then
+            exports["notification"]:createNotification({type = "error", text = "Jelenleg nincs üres parkolóhely!", duration = 5})
+            timeout = 0
+        end
+    end, data.garageId)
 
     while (timeout > 0) do
         timeout = timeout - 1
         Wait(100)
     end
 
-    cb({})
+    cb({status = found})
 end)
 
 RegisterNUICallback("quit", function(_, cb)
@@ -164,12 +179,9 @@ function removePed(ped)
     DeleteEntity(ped)
 
     peds[ped] = nil
-
-    print("removed")
 end
 
 function storeVehicle(data)
-    print(json.encode(data))
     if (not data.garageId) then return end
     if (not DoesEntityExist(data.entity)) then return end
     if (GetEntityType(data.entity) ~= 2) then return end
@@ -204,7 +216,6 @@ function openFactionGarage(data)
     currentVehicles = {}
 
     Callback.TriggerServerCallback("galaxy-garage:fetchFactionVehicles", function(vehicles)
-        print(json.encode(vehicles))
         for k, v in pairs(vehicles) do
             currentVehicles[k] = {
                 plate = k,
@@ -216,10 +227,61 @@ function openFactionGarage(data)
         end
 
         openUI(currentVehicles, data.faction)
+    end, garageId)
+end
+
+function createVehicleInteractionForFactions(zoneId, factionId, faction)
+    Callback.TriggerServerCallback("galaxy-garage:fetchAllFactionVehicles", function(userId, factionVehicles, restricted, userVehicles)
+        exports["gl-target"]:AddType(2, {
+            options = {
+                {
+                    type = "client",
+                    action = storeVehicle,
+                    label = "XJármű leparkolása",
+                    garageId = zoneId,
+                    factionId = factionId,
+                    canInteract = function(entity)
+                        local plate = GetVehicleNumberPlate(entity)
+                        if (not faction) then return false end
+                        if (not faction.fid) then return false end
+                        if (not factionVehicles[plate]) then
+                            if (not userVehicles[plate]) then
+                                return false
+                            end
+                        end
+                        if (restricted) then
+                            if (vehicles[plate].owner ~= userId) then return false end
+                        end
+
+                        return v.factionId == tostring(faction.fid)
+                    end
+                }
+            },
+            distance = 2.5
+        })
     end)
 end
 
-CreateThread(function()
+function createVehicleInteractionsForPublic(zoneId)
+    Callback.TriggerServerCallback("galaxy-garage:fetchAllUserVehicle", function(vehicles)
+        exports["gl-target"]:AddType(2, {
+            options = {
+                {
+                    type = "client",
+                    action = storeVehicle,
+                    label = "XJármű leparkolása",
+                    garageId = zoneId,
+                    canInteract = function(entity)
+                        return vehicles[GetVehicleNumberPlate(entity)] ~= nil
+                    end
+                }
+            },
+            distance = 2.5
+        })
+    end)
+end
+
+function loadFactionGarages()
     local factionGarages = nil
     local timeout = 300
 
@@ -235,7 +297,6 @@ CreateThread(function()
 
     if (factionGarages) then
         for _, v in pairs(factionGarages) do
-            print(json.encode(factionGarages))
             garageZones[string.format("faction_garage_%s", v.id)] = {
                 zoneId = v.id,
                 zone = PolyZone:Create(v.polyzone.zone, {
@@ -255,7 +316,9 @@ CreateThread(function()
             }
         end
     end
+end
 
+function loadPublicGarages()
     for k, v in pairs(config.locations) do
         garageZones[string.format("garage_%s", k)] = {
             zoneId = k,
@@ -271,11 +334,25 @@ CreateThread(function()
             entity = nil
         }
     end
+end
+
+CreateThread(function()
+    loadFactionGarages()
+    loadPublicGarages()
+
+    local faction = exports["fraction"]:get()
+    local timeout = 20
+
+    while (not faction and timeout > 0) do
+        timeout = timeout - 1
+        faction = exports["fraction"]:get()
+        Wait(1000)
+    end
 
     while true do
         local ped = PlayerPedId()
         local coords = GetEntityCoords(ped, false)
-        local faction = exports["fraction"]:get()
+        faction = exports["fraction"]:get()
 
         for _, v in pairs(garageZones) do
             local isIn = false
@@ -287,49 +364,10 @@ CreateThread(function()
             if (isIn) then
                 if (not v.isIn) then
                     v.entity = createPed(v.ped.model, v.ped.coords, v.zoneId, v.factionId, faction)
-                    if (v.factionId) then
-                        Callback.TriggerServerCallback("galaxy-garage:fetchAllFactionVehicles", function(userId, vehicles, restricted)
-                            exports["gl-target"]:AddType(2, {
-                                options = {
-                                    {
-                                        type = "client",
-                                        action = storeVehicle,
-                                        label = "XJármű leparkolása",
-                                        garageId = v.zoneId,
-                                        factionId = v.factionId,
-                                        canInteract = function(entity)
-                                            local plate = GetVehicleNumberPlate(entity)
-                                            if (not faction) then return false end
-                                            if (not faction.fid) then return false end
-                                            if (restricted) then
-                                                if (not vehicles[plate]) then return false end
-                                                if (vehicles[plate].owner ~= userId) then return false end
-                                            end
-
-                                            return v.factionId == tostring(faction.fid)
-                                        end
-                                    }
-                                },
-                                distance = 2.5
-                            })
-                        end)
+                    if (v.factionId and faction) then
+                        createVehicleInteractionForFactions(v.zoneId, v.factionId, faction)
                     else
-                        Callback.TriggerServerCallback("galaxy-garage:fetchAllUserVehicle", function(vehicles)
-                            exports["gl-target"]:AddType(2, {
-                                options = {
-                                    {
-                                        type = "client",
-                                        action = storeVehicle,
-                                        label = "XJármű leparkolása",
-                                        garageId = v.zoneId,
-                                        canInteract = function(entity)
-                                            return vehicles[GetVehicleNumberPlate(entity)] ~= nil
-                                        end
-                                    }
-                                },
-                                distance = 2.5
-                            })
-                        end)
+                        createVehicleInteractionsForPublic(v.zoneId)
                     end
                 end
             else

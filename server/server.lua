@@ -5,6 +5,24 @@ local factionVehicles = {}
 
 Callback.RegisterServerCallback("galaxy-garage:fetchAllUserVehicle", function (source, cb)
     local user = getUserIdentifers(source)
+    local faction = exports["fraction"]:get(source)
+
+    if (not userVehicles[user.id] or not userVehicles[user.id].plates) then return cb({}) end
+    if (not faction or not faction.fid) then return cb(userVehicles[user.id] and userVehicles[user.id].plates or {} or {}) end
+    faction.fid = tostring(faction.fid)
+
+    local vehicles = {}
+    for _, v in pairs(config.restrictedFactions) do
+        if (v.id == faction.fid) then
+            for k, v2 in pairs(userVehicles[user.id]) do
+                if ((v2.stored or v2.impounded) and v2.owner == user.id) then
+                    vehicles[k] = v2
+                end
+            end
+
+            return cb(vehicles)
+        end
+    end
 
     cb(userVehicles[user.id] and userVehicles[user.id].plates or {} or {})
 end)
@@ -25,7 +43,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchAllFactionVehicles", functio
         end
     end
 
-    return cb(user.id, factionVehicles[faction.fid])
+    return cb(user.id, factionVehicles[faction.fid], false, userVehicles[user.id] and userVehicles[user.id].plates or {} or {})
 end)
 
 Callback.RegisterServerCallback("galaxy-garage:fetchUserVehicles", function(source, cb, garageId)
@@ -95,14 +113,13 @@ Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromFactionGarage",
 
     local vehicle = factionVehicles[faction.fid][plate]
     if(vehicle.garageId ~= garageId) then return cb(false) end
+
     if (not userVehicles[vehicle.owner] or not userVehicles[vehicle.owner].plates) then return cb(false) end
     if (not userVehicles[vehicle.owner].plates[plate] or not userVehicles[vehicle.owner].plates[plate].vehicle) then return cb (false) end
 
     factionVehicles[faction.fid][plate].stored = false
-    factionVehicles[faction.fid][plate].garageId = nil
 
     userVehicles[vehicle.owner].plates[plate].vehicle.stored = false
-    userVehicles[vehicle.owner].plates[plate].vehicle.garageId = nil
     userVehicles[vehicle.owner].garage = nil
 
     userVehicles[vehicle.owner].plates[plate].autosave = true
@@ -110,19 +127,7 @@ Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromFactionGarage",
 
     local properties = json.decode(json.encode(userVehicles[vehicle.owner].plates[plate].vehicle.properties))
 
-    local zone = nil
-    local currentGarage = factionGarages[faction.fid]
-
-    if (currentGarage) then
-        for _, v in pairs(currentGarage) do
-            if (tostring(v.id) == garageId) then
-                zone = v.polyzone.parkingZones
-                break
-            end
-        end
-    end
-
-    cb(true, properties, zone)
+    cb(true, properties)
 end)
 
 Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromImpound", function (source, cb, plate)
@@ -184,7 +189,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchFactionGarages", function(so
     cb(factionGarages[tostring(faction.fid)])
 end)
 
-Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(source, cb)
+Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(source, cb, garageId)
     local faction = exports["fraction"]:get(source)
 
     if (not faction) then return cb(false) end
@@ -197,7 +202,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(s
         if (factionId == v.id) then
             local user = getUserIdentifers(source)
             for k, v2 in pairs(factionVehicles[factionId]) do
-                if ((v2.stored or v2.impounded) and v2.owner == user.id) then
+                if ((v2.stored or v2.impounded) and v2.owner == user.id and v2.garageId == garageId) then
                     vehicles[k] = v2
                 end
             end
@@ -207,12 +212,34 @@ Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(s
     end
 
     for k, v in pairs(factionVehicles[factionId]) do
-        if (v.stored or v.impounded) then
+        if ((v.stored or v.impounded) and v.garageId == tostring(garageId)) then
             vehicles[k] = v
         end
     end
 
     cb(vehicles)
+end)
+
+Callback.RegisterServerCallback("galaxy-garage:getZone", function(source, cb, garageId)
+    local faction = exports["fraction"]:get(source)
+
+    if (not faction or not faction.fid) then return cb(false) end
+    faction.fid = tostring(faction.fid)
+    garageId = tostring(garageId)
+
+    local zone = nil
+    local currentGarage = factionGarages[faction.fid]
+
+    if (currentGarage) then
+        for _, v in pairs(currentGarage) do
+            if (tostring(v.id) == garageId) then
+                zone = v.polyzone.parkingZones
+                break
+            end
+        end
+    end
+
+    cb(zone)
 end)
 
 function getUserIdentifers(playerId)
@@ -230,12 +257,11 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
     garageId = tostring(garageId)
     local _source = source
     local faction = exports["fraction"]:get(_source)
-    factionId = tostring(factionId)
+    if (not faction or not faction.fid) then return end
+    faction.fid = tostring(faction.fid)
+    factionId = factionId and tostring(factionId) or nil
 
     if (factionId) then
-        if (not faction or not faction.fid) then return end
-        faction.fid = tostring(faction.fid)
-
         if (faction.fid ~= factionId) then return end
         if (not factionVehicles[factionId]) then
             factionVehicles[factionId] = {}
@@ -244,7 +270,7 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
         if (not factionVehicles[factionId][plate]) then
             local user = getUserIdentifers(_source)
             if (not userVehicles[user.id] or not userVehicles[user.id].plates or not userVehicles[user.id].plates[plate]) then
-                exports["notification"]:createNotification({type = "error", text = "Ez nem a te járműved!", duration = 5})
+                TriggerClientEvent("notification:createNotification", _source, {type = "error", text = "Ez nem a te járműved!", duration = 5})
                 return
             end
 
@@ -272,12 +298,12 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
         end
 
         if (not userVehicles[user.id].plates and not userVehicles[user.id].plates[plate]) then
-            exports["notification"]:createNotification({type = "error", text = "Ez nem a jármű nem a tied!", duration = 5})
+            TriggerClientEvent("notification:createNotification", _source, {type = "error", text = "Ez nem a jármű nem a tied!", duration = 5})
             return
         end
 
-        if (factionVehicles[factionId] and factionVehicles[factionId][plate]) then
-            factionVehicles[factionId][plate] = nil
+        if (factionVehicles[faction.fid] and factionVehicles[faction.fid][plate]) then
+            factionVehicles[faction.fid][plate] = nil
             userVehicles[user.id].plates[plate].vehicle.factionId = nil
         end
 
