@@ -12,7 +12,7 @@ games {
   "rdr3"
 }
 
-ui_page 'web/build/index.html'
+ui_page 'web/index.html'
 
 shared_scripts{
     "shared/config.lua"
@@ -25,6 +25,7 @@ client_scripts{
     "@PolyZone/EntityZone.lua",
     "@PolyZone/CircleZone.lua",
     "@PolyZone/ComboZone.lua",
+    "client/utils.lua",
     "client/client.lua"
 }
 server_scripts{
@@ -34,5 +35,5 @@ server_scripts{
 }
 
 files {
-    "html/**/*"
+    "web/**/*"
 }

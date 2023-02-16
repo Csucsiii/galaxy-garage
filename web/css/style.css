@@ -9,14 +9,6 @@
     user-select: none;
 }
 
-body {
-    background-image: url("../assets/bg.jpg");
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: cover;
-    background-attachment: fixed;
-}
-
 .container {
     position: absolute;
     top: 10%;
@@ -34,7 +26,6 @@ body {
 
     overflow: hidden;
     border-radius: 10px;
-    /* background-color: rgb(20, 20, 20, .5); */
 }
 
 .header {
@@ -44,7 +35,7 @@ body {
 
     height: 70px;
     width: 100%;
-    background-color: rgba(127, 22, 127, 0.7);
+    background-color: rgba(127, 22, 127, 0.9);
 }
 
 .title {
@@ -204,6 +195,8 @@ body {
     background-color: rgb(30, 30, 30, 0.8);
     border-radius: 10px;
     overflow: hidden;
+
+    transition: top 600ms ease-in-out;
 }
 
 .modal-header{
