@@ -278,8 +278,13 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
         end
 
         local vehicle = factionVehicles[factionId][plate]
+        local vehicleProperties = userVehicles[vehicle.owner].plates[plate].vehicle.properties
 
-        userVehicles[vehicle.owner].plates[plate].vehicle.properties = properties
+        for key, v in pairs(properties) do
+            vehicleProperties[key] = v
+        end
+
+        userVehicles[vehicle.owner].plates[plate].vehicle.properties = vehicleProperties
         userVehicles[vehicle.owner].plates[plate].vehicle.stored = true
         userVehicles[vehicle.owner].plates[plate].vehicle.garageId = garageId
         userVehicles[vehicle.owner].plates[plate].vehicle.factionId = factionId
@@ -307,7 +312,13 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
             userVehicles[user.id].plates[plate].vehicle.factionId = nil
         end
 
-        userVehicles[user.id].plates[plate].vehicle.properties = properties
+        local vehicleProperties = userVehicles[vehicle.owner].plates[plate].vehicle.properties
+
+        for key, v in pairs(properties) do
+            vehicleProperties[key] = v
+        end
+
+        userVehicles[user.id].plates[plate].vehicle.properties = vehicleProperties
         userVehicles[user.id].plates[plate].vehicle.stored = true
         userVehicles[user.id].plates[plate].vehicle.garageId = garageId
 

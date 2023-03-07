@@ -2,6 +2,7 @@
 local garageZones = {}
 local peds = {}
 local currentVehicles = {}
+local userFaction = nil
 
 function closeUI()
     SetNuiFocus(false, false)
@@ -122,7 +123,7 @@ RegisterNUICallback("quit", function(_, cb)
     cb({})
 end)
 
-function createPed(model, coords, garageId, faction, userFaction)
+function createPed(model, coords, garageId, factionId)
     local modelHash = GetHashKey(model)
 
     while (not HasModelLoaded(modelHash)) do
@@ -141,20 +142,24 @@ function createPed(model, coords, garageId, faction, userFaction)
 
     peds[ped] = true
 
-    if (faction) then
-        if (faction == tostring(userFaction.fid)) then
-            exports["gl-target"]:AddTargetEntity(ped, {
-                options = {
-                    {
-                        type = "client",
-                        label = "Garázs megnyitása",
-                        action = openFactionGarage,
-                        garageId = garageId,
-                        faction = faction
-                    }
+    if (factionId) then
+        exports["gl-target"]:AddTargetEntity(ped, {
+            options = {
+                {
+                    type = "client",
+                    label = "Garázs megnyitása",
+                    action = openFactionGarage,
+                    garageId = garageId,
+                    faction = factionId,
+                    canInteract = function()
+                        if (not userFaction) then return false end
+                        if (factionId ~= tostring(userFaction.fid)) then return false end
+
+                        return true
+                    end
                 }
-            })
-        end
+            }
+        })
     else
         exports["gl-target"]:AddTargetEntity(ped, {
             options = {
@@ -188,7 +193,7 @@ function storeVehicle(data)
 
     local plate = GetVehicleNumberPlate(data.entity)
     local netId = NetworkGetNetworkIdFromEntity(data.entity)
-    local properties = exports["galaxy-tuning"]:GetVehicleProperties(data.entity)
+    local properties = GetVehicleProperties(data.entity)
 
     TriggerServerEvent("galaxy-garage:takeVehicleIntoGarage", data.garageId, plate, properties, netId, data.factionId)
 end
@@ -230,7 +235,7 @@ function openFactionGarage(data)
     end, garageId)
 end
 
-function createVehicleInteractionForFactions(zoneId, factionId, faction)
+function createVehicleInteractionForFactions(zoneId, factionId)
     Callback.TriggerServerCallback("galaxy-garage:fetchAllFactionVehicles", function(userId, factionVehicles, restricted, userVehicles)
         exports["gl-target"]:AddType(2, {
             options = {
@@ -242,8 +247,8 @@ function createVehicleInteractionForFactions(zoneId, factionId, faction)
                     factionId = factionId,
                     canInteract = function(entity)
                         local plate = GetVehicleNumberPlate(entity)
-                        if (not faction) then return false end
-                        if (not faction.fid) then return false end
+                        if (not userFaction) then return false end
+                        if (not userFaction.fid) then return false end
                         if (not factionVehicles[plate]) then
                             if (not userVehicles[plate]) then
                                 return false
@@ -253,7 +258,7 @@ function createVehicleInteractionForFactions(zoneId, factionId, faction)
                             if (vehicles[plate].owner ~= userId) then return false end
                         end
 
-                        return v.factionId == tostring(faction.fid)
+                        return factionId == tostring(userFaction.fid)
                     end
                 }
             },
@@ -326,7 +331,7 @@ function loadPublicGarages()
                 name = string.format("garage_%s", k),
                 minZ = v.minZ,
                 maxZ = v.maxZ,
-                debugGrid = false,
+                debugGrid = true,
                 gridDivision = 30
             }),
             isIn = false,
@@ -335,54 +340,6 @@ function loadPublicGarages()
         }
     end
 end
-
-CreateThread(function()
-    loadFactionGarages()
-    loadPublicGarages()
-
-    local faction = exports["fraction"]:get()
-    local timeout = 20
-
-    while (not faction and timeout > 0) do
-        timeout = timeout - 1
-        faction = exports["fraction"]:get()
-        Wait(1000)
-    end
-
-    while true do
-        local ped = PlayerPedId()
-        local coords = GetEntityCoords(ped, false)
-        faction = exports["fraction"]:get()
-
-        for _, v in pairs(garageZones) do
-            local isIn = false
-
-            if (v.zone:isPointInside(coords)) then
-                isIn = true
-            end
-
-            if (isIn) then
-                if (not v.isIn) then
-                    v.entity = createPed(v.ped.model, v.ped.coords, v.zoneId, v.factionId, faction)
-                    if (v.factionId and faction) then
-                        createVehicleInteractionForFactions(v.zoneId, v.factionId, faction)
-                    else
-                        createVehicleInteractionsForPublic(v.zoneId)
-                    end
-                end
-            else
-                if (v.isIn) then
-                    removePed(v.entity)
-                    exports["gl-target"]:RemoveType(2, { "XJármű leparkolása" })
-                end
-            end
-
-            v.isIn = isIn
-        end
-
-        Wait(3000)
-    end
-end)
 
 RegisterNetEvent("galaxy-garage:setVehicleData")
 AddEventHandler("galaxy-garage:setVehicleData", function (netId, properties)
@@ -402,10 +359,87 @@ AddEventHandler("onResourceStop", function(resourceName)
         v.zone:destroy()
     end
 
-    for _, v in pairs(peds) do
-        if (DoesEntityExist(v)) then
-            SetEntityAsMissionEntity(v, true, true)
-            DeleteEntity(v)
+    for ped in pairs(peds) do
+        removePed(ped)
+    end
+end)
+
+AddEventHandler("FRACTION_LOAD", function(data)
+    if (data) then
+        userFaction = data
+    end
+end)
+
+AddEventHandler("FRACTION_CHANGE", function (data)
+    if (data) then
+        userFaction = data
+    end
+
+    for k, v in pairs(garageZones) do
+        if (v.factionId) then
+            v.zone:destroy()
+            garageZones[k] = nil
         end
+    end
+
+    for ped in pairs(peds) do
+        removePed(ped)
+    end
+
+    loadFactionGarages()
+end)
+
+AddEventHandler("SWITCH_USER", function()
+    for _, v in pairs(garageZones) do
+        v.zone:destroy()
+    end
+
+    for ped in pairs(peds) do
+        removePed(ped)
+    end
+
+    loadFactionGarages()
+    loadPublicGarages()
+
+    userFaction = exports["fraction"]:get()
+end)
+
+
+CreateThread(function()
+    loadFactionGarages()
+    loadPublicGarages()
+
+    userFaction = exports["fraction"]:get()
+
+    while true do
+        local ped = PlayerPedId()
+        local coords = GetEntityCoords(ped, false)
+        for _, v in pairs(garageZones) do
+            local isIn = false
+
+            if (v.zone:isPointInside(coords)) then
+                isIn = true
+            end
+
+            if (isIn) then
+                if (not v.isIn) then
+                    v.entity = createPed(v.ped.model, v.ped.coords, v.zoneId, v.factionId)
+                    if (v.factionId and userFaction) then
+                        createVehicleInteractionForFactions(v.zoneId, v.factionId)
+                    else
+                        createVehicleInteractionsForPublic(v.zoneId)
+                    end
+                end
+            else
+                if (v.isIn) then
+                    removePed(v.entity)
+                    exports["gl-target"]:RemoveType(2, { "XJármű leparkolása" })
+                end
+            end
+
+            v.isIn = isIn
+        end
+
+        Wait(3000)
     end
 end)

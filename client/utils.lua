@@ -74,3 +74,46 @@ end
 function GetVehicleNumberPlate(vehicle)
     return string.gsub(string.lower(GetVehicleNumberPlateText(vehicle)), "%s+", "")
 end
+
+function GetVehicleProperties(vehicle)
+    local nitroAmount = DecorExistOn(vehicle, "vehicle_nitro_amount") and DecorGetInt(vehicle, "vehicle_nitro_amount") or 0
+    nitroAmount = nitroAmount < 0 and 0 or nitroAmount
+
+    if DoesEntityExist(vehicle) then
+        local windows = {}
+        local tyres = {}
+        local doors = {}
+        for i = 1, 13, 1 do
+            windows[i] = IsVehicleWindowIntact(vehicle, i - 1)
+        end
+        for i = 0, 10, 1 do
+            tyres[i] = IsVehicleTyreBurst(vehicle, i)
+        end
+        for i = 0, 10, 1 do
+            doors[i] = IsVehicleDoorDamaged(vehicle, i)
+        end
+
+        local fuelLevel = GetVehicleFuelLevel(vehicle)
+
+        if (DecorExistOn(vehicle, "vehicle_fuel")) then
+            fuelLevel = DecorGetFloat(vehicle, "vehicle_fuel") or 32
+        end
+
+        return {
+            windows = windows,
+            tyres = tyres,
+            doors = doors,
+
+            bodyHealth = GetVehicleBodyHealth(vehicle),
+            engineHealth = GetVehicleEngineHealth(vehicle),
+            tankHealth = GetVehiclePetrolTankHealth(vehicle),
+
+            fuelLevel = fuelLevel,
+            dirtLevel = GetVehicleDirtLevel(vehicle),
+
+            modNitro = nitroAmount
+        }
+    else
+        return
+    end
+end
