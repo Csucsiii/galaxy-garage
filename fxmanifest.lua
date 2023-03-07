@@ -31,6 +31,8 @@ client_scripts{
 server_scripts{
     "@callback/lib/server.lua",
     "@mysql-async/lib/MySQL.lua",
+    "server/faction.lua",
+    "server/user.lua",
     "server/server.lua"
 }
 
