@@ -1,56 +1,40 @@
 ---@diagnostic disable: undefined-global, lowercase-global
 
--- Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromImpound", function (source, cb, plate)
---     local user = getUserIdentifers(source)
---     if (not userVehicles[user.id]) then
---         userVehicles[user.id] = {}
---         return cb(false)
---     end
+Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromImpound", function (source, cb, plate)
+    local user = GetUserIdentifers(source)
+    if (not DoesUserOwnVehicle(user.id, plate)) then return cb(false) end
 
---     if (not userVehicles[user.id].plates or not userVehicles[user.id].plates[plate]) then
---         return cb(false)
---     end
+    local balance = exports["balance"]:getBalance(source)
+    local cash = exports["inventory"]:getItemCount(source, 104) --cash id 
+    local paid = false
 
---     local balance = exports["balance"]:getBalance(source)
---     local cash = exports["inventory"]:getItemCount(source, 104) --cash id 
---     local paid = false
+    if (balance.usd >= config.impound.price) then
+        exports["balance"]:changeBalance(source, {
+            type = "usd",
+            amount = config.impound.price * 1,
+            paymentType = "impounded"
+        })
 
---     if (balance.usd >= config.impound.price) then
---         exports["balance"]:changeBalance(source, {
---             type = "usd",
---             amount = config.impound.price * 1,
---             paymentType = "impounded"
---         })
+        paid = true
+    elseif (cash and cash >= config.impound.price) then
+        exports["inventory"]:changeItem(source, 104, tonumber(config.impound.price) * -1)
+        paid = true
+    end
 
---         paid = true
---     elseif (cash and cash >= config.impound.price) then
---         exports["inventory"]:changeItem(source, 104, tonumber(config.impound.price) * -1)
---         paid = true
---     end
+    if (not paid) then
+        return cb(false)
+    end
 
---     if (not paid) then
---         return cb(false)
---     end
+    TakeOutVehicleFromUser(user.id, plate, true)
+    local userVehicle = GetUserVehicle(user.id, plate)
+    if (userVehicle.factionId) then
+        SetVehicleIntoFactionGarage(user.id, userVehicle.factionId, plate)
+    end
 
---     userVehicles[user.id].plates[plate].vehicle.stored = false
---     userVehicles[user.id].plates[plate].vehicle.impounded = false
---     userVehicles[user.id].plates[plate].vehicle.garageId = nil
---     userVehicles[user.id].plates[plate].garage = nil
+    cb(userVehicles[user.id].plates[plate].vehicle.properties)
+end)
 
---     userVehicles[user.id].plates[plate].autosave = true
---     userVehicles[user.id].autosave = true
-
---     local factionId = userVehicles[user.id].plates[plate].vehicle.factionId
---     if (factionId) then
---         if (factionVehicles[factionId] and factionVehicles[factionId][plate]) then
---             factionVehicles[factionId][plate] = userVehicles[user.id].plates[plate].vehicle
---         end
---     end
-
---     cb(userVehicles[user.id].plates[plate].vehicle.properties)
--- end)
-
-function getUserIdentifers(playerId)
+function GetUserIdentifers(playerId)
     local dcid = exports["accountmanager"]:GetDiscordId(playerId)
     local userId = tostring(exports["accountmanager"]:GetUserIdByDiscordId(dcid))
 
@@ -86,8 +70,46 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
     if (factionId) then
         StoreVehicleIntoGarage(garageId, faction, plate, properties, factionId)
     else
-        StoreUserVehicle(_source, faction, plate, factionId, properties)
+        StoreUserVehicle(_source, faction, plate, factionId, garageId, properties)
     end
 
     DeleteEntity(NetworkGetEntityFromNetworkId(netId))
 end)
+
+-- AddEventHandler("playerConnected", function(playerId)
+--     local user = GetUserIdentifers(playerId)
+
+--     print(user.id)
+--     MySQL.Async.fetchScalar("SELECT id FROM `account` WHERE userId=@userId LIMIT 1", {
+--         ["@userId"] = user.id
+--     }, function(id)
+--         print("Account Id")
+--         MySQL.Async.fetchAll("SELECT * FROM `vehicles` WHERE owner=@owner", {
+--             ["@owner"] = id
+--         }, function(result)
+--             for _, v in pairs(result) do
+--                 local obj = {
+--                     model = v.model,
+--                     vehicleName = v.vehicleName,
+--                     plate = v.plate,
+--                     properties = json.decode(v.data),
+--                     factionId = nil,
+--                     garageId = v.garageId,
+--                     stored = v.isOut,
+--                     impounded = false
+--                 }
+
+--                 print("Adding Vehicle", v.plate)
+--                 AddNewVehicle(playerId, obj)
+
+--                 MySQL.Async.execute("DELETE FROM `vehicles` WHERE id=@id", {
+--                     ["@id"] = v.id
+--                 }, function(rowsChanged)
+--                     if (rowsChanged) then
+--                         print("Removed Vehicle", v.id, v.plate, v.model)
+--                     end
+--                 end)
+--             end
+--         end)
+--     end)
+-- end)

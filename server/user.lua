@@ -2,7 +2,7 @@
 local userVehicles = {}
 
 Callback.RegisterServerCallback("galaxy-garage:fetchAllUserVehicle", function (source, cb)
-    local user = getUserIdentifers(source)
+    local user = GetUserIdentifers(source)
     local faction = exports["fraction"]:get(source)
 
     if (not userVehicles[user.id] or not userVehicles[user.id].plates) then return cb({}) end
@@ -26,7 +26,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchAllUserVehicle", function (s
 end)
 
 Callback.RegisterServerCallback("galaxy-garage:fetchUserVehicles", function(source, cb, garageId)
-    local user = getUserIdentifers(source)
+    local user = GetUserIdentifers(source)
     garageId = tostring(garageId)
 
     if (not userVehicles[user.id]) then
@@ -48,7 +48,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchUserVehicles", function(sour
 end)
 
 Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromGarage", function(source, cb, garageId, plate)
-    local user = getUserIdentifers(source)
+    local user = GetUserIdentifers(source)
     garageId = tostring(garageId)
 
     if (not userVehicles[user.id]) then
@@ -68,13 +68,7 @@ Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromGarage", functi
 
     local properties = json.decode(json.encode(userVehicles[user.id].plates[plate].vehicle.properties))
 
-    userVehicles[user.id].plates[plate].vehicle.stored = false
-    userVehicles[user.id].plates[plate].vehicle.garageId = nil
-    userVehicles[user.id].plates[plate].garage = nil
-
-    userVehicles[user.id].plates[plate].autosave = true
-    userVehicles[user.id].autosave = true
-
+    TakeOutVehicleFromUser(user.id, plate)
     cb(true, properties)
 end)
 
@@ -120,12 +114,14 @@ MySQL.ready(function()
             if (v.factionId) then
                 AddVehicleToFactionCache(userId, garageId, v)
             end
+
+            -- print("ASD", json.encode(v))
         end
     end)
 end)
 
-function StoreUserVehicle(playerId, faction, plate, factionId, properties)
-    local user = getUserIdentifers(playerId)
+function StoreUserVehicle(playerId, faction, plate, factionId, garageId, properties)
+    local user = GetUserIdentifers(playerId)
 
     if (not userVehicles[user.id]) then
         userVehicles[user.id] = {}
@@ -158,10 +154,17 @@ function GetUserVehicles(userId)
     return userVehicles[userId]
 end
 
-function TakeOutVehicleFromUser(userId, plate)
-    userVehicles[userId].plates[plate].vehicle.stored = false
-    userVehicles[userId].garage = nil
+function GetUserVehicle(userId, plate)
+    return userVehicles[userId].plates[plate].vehicle
+end
 
+function TakeOutVehicleFromUser(userId, plate, impound)
+    userVehicles[userId].plates[plate].vehicle.stored = false
+    if (impound) then
+        userVehicles[user.id].plates[plate].vehicle.impounded = false
+    end
+
+    userVehicles[userId].garage = nil
     userVehicles[userId].plates[plate].autosave = true
     userVehicles[userId].autosave = true
 end
@@ -188,6 +191,56 @@ end
 
 function GetVehiclePropertiesFromCache(userId, plate)
     return json.decode(json.encode(userVehicles[userId].plates[plate].vehicle.properties))
+end
+
+function AddNewVehicle(playerId, data)
+    if (not DoesEntityExist(GetPlayerPed(playerId))) then return end
+
+    local user = GetUserIdentifers(playerId)
+    MySQL.Async.insert("INSERT INTO `user_vehicles` (id, userId, model, properties, plate, vehicleName, factionId, garageId, stored, impounded) VALUES (NULL, @userId, @model, @properties, @plate, @vehicleName, @factionId, NULL, @stored, @impounded)", {
+        ["@userId"] = user.id,
+        ["@model"] = data.model,
+        ["@properties"] = json.encode(data.properties),
+        ["@plate"] = data.plate,
+        ["@vehicleName"] = data.vehicleName,
+        ["@factionId"] = data.factionId,
+        ["@stored"] = false,
+        ["@impounded"] = false
+    }, function(id)
+        if (not userVehicles[user.id]) then
+            userVehicles[user.id] = {
+                autosave = false
+            }
+        end
+
+        if (not userVehicles[user.id].plates) then
+            userVehicles[user.id].plates = {}
+        end
+
+        if (not userVehicles[user.id].plates[data.plate]) then
+            userVehicles[user.id].plates[data.plate] = {
+                autosave = false,
+                vehicle = nil,
+                garage = {}
+            }
+        end
+
+        userVehicles[user.id].plates[data.plate].vehicle = {
+            id = id,
+            owner = user.id,
+            model = data.model,
+            properties = data.properties,
+            plate = data.plate,
+            vehicleName = data.vehicleName,
+            factionId = data.factionId,
+            impounded = data.impounded,
+        }
+        userVehicles[user.id].plates[data.plate].garage = garageId
+
+        if (data.factionId) then
+            AddVehicleToFactionCache(user.id, nil, data)
+        end
+    end)
 end
 
 CreateThread(function()
@@ -219,3 +272,5 @@ CreateThread(function()
         end
     end
 end)
+
+exports("addNewVehicle", AddNewVehicle)

@@ -41,7 +41,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchAllFactionVehicles", functio
     if (not faction or not faction.fid) then return cb({}) end
     if (not factionVehicles[faction.fid]) then return cb({}) end
 
-    local user = getUserIdentifers(source)
+    local user = GetUserIdentifers(source)
 
     for _, v in pairs(config.restrictedFactions) do
         if (faction.fid == v.id) then
@@ -88,7 +88,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(s
     local vehicles = {}
     for _, v in pairs(config.restrictedFactions) do
         if (factionId == v.id) then
-            local user = getUserIdentifers(source)
+            local user = GetUserIdentifers(source)
             for k, v2 in pairs(factionVehicles[factionId]) do
                 if ((v2.stored or v2.impounded) and v2.owner == user.id and v2.garageId == garageId) then
                     vehicles[k] = v2
@@ -127,7 +127,7 @@ MySQL.ready(function ()
     end)
 end)
 
-local function RegisterProctedCommand(name, rank, cb)
+function RegisterProctedCommand(name, rank, cb)
     exports["command-handler"]:registerCommand(name, rank, cb, GetCurrentResourceName())
 end
 
@@ -190,7 +190,7 @@ function StoreVehicleIntoGarage(garageId, faction, plate, properties, factionId)
     end
 
     if (not factionVehicles[factionId][plate]) then
-        local user = getUserIdentifers(_source)
+        local user = GetUserIdentifers(_source)
         if (not userVehicles[user.id] or not userVehicles[user.id].plates or not userVehicles[user.id].plates[plate]) then
             TriggerClientEvent("notification:createNotification", _source, {type = "error", text = "Ez nem a te járműved!", duration = 5})
             return
@@ -221,4 +221,10 @@ function RemoveVehicleFromFactionVehicles(faction, plate)
     end
 
     return false
+end
+
+function SetVehicleIntoFactionGarage(userId, factionId, plate)
+    if (factionVehicles[factionId] and factionVehicles[factionId][plate]) then
+        factionVehicles[factionId][plate] = GetUserVehicle(userId, plate)
+    end
 end

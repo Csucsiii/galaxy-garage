@@ -277,6 +277,7 @@ function createVehicleInteractionsForPublic(zoneId)
                     label = "XJármű leparkolása",
                     garageId = zoneId,
                     canInteract = function(entity)
+                        if (GetVehicleClass(entity) == 18) then return false end
                         return vehicles[GetVehicleNumberPlate(entity)] ~= nil
                     end
                 }
@@ -334,6 +335,17 @@ function loadPublicGarages()
                 debugGrid = true,
                 gridDivision = 30
             }),
+            interaction = {
+                zone = PolyZone:Create(v.interaction.zone, {
+                    name = string.format("garage_interaction_%s", k),
+                    minZ = v.interaction.minZ,
+                    maxZ = v.interaction.maxZ,
+                    debugGrid = true,
+                    gridDivision = 30
+                }),
+                isIn = false,
+            },
+            public = v.public,
             isIn = false,
             ped = v.ped,
             entity = nil
@@ -404,7 +416,6 @@ AddEventHandler("SWITCH_USER", function()
     userFaction = exports["fraction"]:get()
 end)
 
-
 CreateThread(function()
     loadFactionGarages()
     loadPublicGarages()
@@ -424,10 +435,30 @@ CreateThread(function()
             if (isIn) then
                 if (not v.isIn) then
                     v.entity = createPed(v.ped.model, v.ped.coords, v.zoneId, v.factionId)
-                    if (v.factionId and userFaction) then
-                        createVehicleInteractionForFactions(v.zoneId, v.factionId)
+                    if (v.public) then
+                        while (v.zone:isPointInside(coords)) do
+                            coords = GetEntityCoords(ped)
+                            local inInteractionZone = v.interaction.zone:isPointInside(coords)
+
+                            if (inInteractionZone) then
+                                if (not v.interaction.isIn) then
+                                    print("Interaction Active")
+                                    createVehicleInteractionsForPublic(v.zoneId)
+                                end
+                            else
+                                if (v.interaction.isIn) then
+                                    print("Interaction Removed")
+                                    exports["gl-target"]:RemoveType(2, { "XJármű leparkolása" })
+                                end
+                            end
+
+                            v.interaction.isIn = inInteractionZone
+                            Wait(500)
+                        end
                     else
-                        createVehicleInteractionsForPublic(v.zoneId)
+                        if (v.factionId and userFaction) then
+                            createVehicleInteractionForFactions(v.zoneId, v.factionId)
+                        end
                     end
                 end
             else
@@ -440,6 +471,6 @@ CreateThread(function()
             v.isIn = isIn
         end
 
-        Wait(3000)
+        Wait(1500)
     end
 end)
