@@ -196,6 +196,9 @@ function storeVehicle(data)
     local properties = GetVehicleProperties(data.entity)
 
     TriggerServerEvent("galaxy-garage:takeVehicleIntoGarage", data.garageId, plate, properties, netId, data.factionId)
+    TriggerServerEvent("vehicle_spawn:UnregistVehicle", {
+        plate = GetVehicleNumberPlateText(data.entity)
+    })
 end
 
 function openGarage(data)
@@ -236,7 +239,7 @@ function openFactionGarage(data)
 end
 
 function createVehicleInteractionForFactions(zoneId, factionId)
-    Callback.TriggerServerCallback("galaxy-garage:fetchAllFactionVehicles", function(userId, factionVehicles, restricted, userVehicles)
+    Callback.TriggerServerCallback("galaxy-garage:fetchAllFactionVehicles", function(userId, factionVehicles, emergency, userVehicles)
         exports["gl-target"]:AddType(2, {
             options = {
                 {
@@ -247,15 +250,18 @@ function createVehicleInteractionForFactions(zoneId, factionId)
                     factionId = factionId,
                     canInteract = function(entity)
                         local plate = GetVehicleNumberPlate(entity)
-                        if (not userFaction) then return false end
-                        if (not userFaction.fid) then return false end
+                        if (not userFaction) then print("userFaction") return false end
+                        if (not userFaction.fid) then print("userFaction fid") return false end
                         if (not factionVehicles[plate]) then
-                            if (not userVehicles[plate]) then
+                            print(json.encode(userVehicles[plate]))
+                            if (not userVehicles or not userVehicles[plate]) then
+                                print("not uservehicle and not faction vehicle", json.encode(userVehicles), json.encode(factionVehicles))
                                 return false
                             end
                         end
-                        if (restricted) then
-                            if (vehicles[plate].owner ~= userId) then return false end
+                        if (emergency) then
+                            local model = GetEntityModel(entity)
+                            if (not config.emergencyVehicles[model]) then print("not emergency") return false end
                         end
 
                         return factionId == tostring(userFaction.fid)
@@ -360,6 +366,13 @@ AddEventHandler("galaxy-garage:setVehicleData", function (netId, properties)
     local vehicle = NetworkGetEntityFromNetworkId(netId)
     if (GetEntityType(vehicle) ~= 2) then return end
     exports["galaxy-tuning"]:SetVehicleProperties(vehicle, properties)
+
+    SetNetworkIdExistsOnAllMachines(netId, true)
+    SetNetworkIdCanMigrate(netId, true)
+    DecorSetBool(vehicle, "playerVehicle", true)
+    SetEntityAsMissionEntity(vehicle, true, false)
+    SetVehicleHasBeenOwnedByPlayer(vehicle, true)
+    SetVehicleEngineOn(vehicle, false, true, false)
 end)
 
 AddEventHandler("onResourceStop", function(resourceName)

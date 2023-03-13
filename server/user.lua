@@ -10,7 +10,7 @@ Callback.RegisterServerCallback("galaxy-garage:fetchAllUserVehicle", function (s
     faction.fid = tostring(faction.fid)
 
     local vehicles = {}
-    for _, v in pairs(config.restrictedFactions) do
+    for _, v in pairs(config.emergency) do
         if (v.id == faction.fid) then
             for k, v2 in pairs(userVehicles[user.id]) do
                 if ((v2.stored or v2.impounded) and v2.owner == user.id) then
@@ -125,12 +125,12 @@ function StoreUserVehicle(playerId, faction, plate, factionId, garageId, propert
 
     if (not userVehicles[user.id]) then
         userVehicles[user.id] = {}
-        return
+        return false
     end
 
     if (not userVehicles[user.id].plates and not userVehicles[user.id].plates[plate]) then
         TriggerClientEvent("notification:createNotification", _source, {type = "error", text = "Ez nem a jármű nem a tied!", duration = 5})
-        return
+        return false
     end
 
     if (RemoveVehicleFromFactionVehicles(faction, plate)) then
@@ -148,6 +148,12 @@ function StoreUserVehicle(playerId, faction, plate, factionId, garageId, propert
         factionId = factionId,
         properties = vehicleProperties
     })
+
+    return true
+end
+
+function GetAllUserVehicles()
+    return userVehicles
 end
 
 function GetUserVehicles(userId)
@@ -156,6 +162,16 @@ end
 
 function GetUserVehicle(userId, plate)
     return userVehicles[userId].plates[plate].vehicle
+end
+
+function SaveUserVehicle(userId, plate, properties)
+    if (userVehicles[userId]) then
+        if (userVehicles[userId].plates) then
+            if (userVehicles[userId].plates[plate]) then
+                userVehicles[userId].plates[plate].vehicle.properties = properties
+            end
+        end
+    end
 end
 
 function TakeOutVehicleFromUser(userId, plate, impound)
@@ -274,3 +290,4 @@ CreateThread(function()
 end)
 
 exports("addNewVehicle", AddNewVehicle)
+exports("saveUserVehicle", SaveUserVehicle)

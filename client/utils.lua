@@ -32,6 +32,27 @@ function GetVehiclesInArea(coords, area)
     return vehiclesInArea
 end
 
+function GetClosestVehicle(coords)
+    local function getClosestEntity(entities, isPlayerEntities)
+        local closestEntity, closestEntityDistance, filteredEntities = -1, -1, nil
+
+        coords = vector3(coords.x, coords.y, coords.z)
+
+        for k, entity in pairs(entities) do
+            local distance = #(coords - GetEntityCoords(entity))
+            if closestEntityDistance == -1 or distance < closestEntityDistance then
+                closestEntity, closestEntityDistance = isPlayerEntities and k or entity, distance
+            end
+        end
+        return closestEntity, closestEntityDistance
+    end
+
+
+    return getClosestEntity(GetVehicles(), false)
+end
+
+
+
 function GetVehicles()
     local vehicles = {}
 

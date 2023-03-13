@@ -31,7 +31,16 @@ Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromImpound", funct
         SetVehicleIntoFactionGarage(user.id, userVehicle.factionId, plate)
     end
 
-    cb(userVehicles[user.id].plates[plate].vehicle.properties)
+    cb(userVehicle.plates[plate].vehicle.properties)
+end)
+
+Callback.RegisterServerCallback("galaxy-garage:doesPlayerOwnVehicle", function(source, cb, plate)
+    local user = GetUserIdentifers(source)
+
+    if (DoesUserOwnVehicle(user.id, plate)) then return cb(true) end
+    if (DoesFactionOwnVehicle(source, plate)) then return cb(true) end
+
+    return cb(false)
 end)
 
 function GetUserIdentifers(playerId)
@@ -42,6 +51,19 @@ function GetUserIdentifers(playerId)
         dcid = dcid,
         id = userId
     }
+end
+
+function SaveVehicleProperties(properties)
+    local plate = properties.plate:lower()
+    local userVehicles = GetAllUserVehicles()
+    for userId, v in pairs(userVehicles) do
+        if (v.plates) then
+            if (v.plates[plate]) then
+                SaveUserVehicle(userId, plate, properties)
+                break
+            end
+        end
+    end
 end
 
 RegisterNetEvent("galaxy-garage:spawnVehicle")
@@ -66,14 +88,26 @@ AddEventHandler("galaxy-garage:takeVehicleIntoGarage", function(garageId, plate,
     if (not faction or not faction.fid) then return end
     faction.fid = tostring(faction.fid)
     factionId = factionId and tostring(factionId) or nil
+    local success = false
 
     if (factionId) then
-        StoreVehicleIntoGarage(garageId, faction, plate, properties, factionId)
+        success = StoreVehicleIntoGarage(_source, garageId, faction, plate, properties, factionId)
     else
-        StoreUserVehicle(_source, faction, plate, factionId, garageId, properties)
+        success = StoreUserVehicle(_source, faction, plate, factionId, garageId, properties)
     end
 
-    DeleteEntity(NetworkGetEntityFromNetworkId(netId))
+    if (success) then
+        TriggerEvent("vehicle_spawn:UnregistVehicle", plate)
+        DeleteEntity(NetworkGetEntityFromNetworkId(netId))
+    end
+end)
+
+RegisterNetEvent("galaxy-garage:vehicleDoorlockSync")
+AddEventHandler("galaxy-garage:vehicleDoorlockSync", function(netId, status)
+    local entity = NetworkGetEntityFromNetworkId(netId)
+    local entityOwner = NetworkGetEntityOwner(entity)
+
+    TriggerClientEvent("galaxy-garage:vehicleDoorlockSync", entityOwner, netId, status)
 end)
 
 -- AddEventHandler("playerConnected", function(playerId)
@@ -113,3 +147,6 @@ end)
 --         end)
 --     end)
 -- end)
+
+
+exports("saveVehicleProperties", SaveVehicleProperties)

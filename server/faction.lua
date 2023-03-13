@@ -39,17 +39,20 @@ Callback.RegisterServerCallback("galaxy-garage:fetchAllFactionVehicles", functio
     faction.fid = tostring(faction.fid)
 
     if (not faction or not faction.fid) then return cb({}) end
-    if (not factionVehicles[faction.fid]) then return cb({}) end
-
     local user = GetUserIdentifers(source)
+    local userVehicles = GetUserVehicles(user.id)
 
-    for _, v in pairs(config.restrictedFactions) do
-        if (faction.fid == v.id) then
-            return cb(user.id, factionVehicles[faction.fid], true)
+    for key in pairs(config.emergency) do
+        if (faction.fid == key) then
+            if (not factionVehicles or not factionVehicles[faction.fid]) then
+                return cb(user.id, nil, true, userVehicles and userVehicles.plates or nil or nil)
+            end
+
+            return cb(user.id, factionVehicles[faction.fid], true, userVehicles and userVehicles.plates or nil or nil)
         end
     end
-    local userVehicles = GetUserVehicles(user.id)
-    return cb(user.id, factionVehicles[faction.fid], false, userVehicles and userVehicles.plates or {} or {})
+
+    return cb(user.id, factionVehicles[faction.fid], false, userVehicles and userVehicles.plates or nil or nil)
 end)
 
 Callback.RegisterServerCallback("galaxy-garage:takeVehicleOutFromFactionGarage", function(source, cb, garageId, plate, factionId)
@@ -86,12 +89,13 @@ Callback.RegisterServerCallback("galaxy-garage:fetchFactionVehicles", function(s
     local factionId = tostring(faction.fid)
 
     local vehicles = {}
-    for _, v in pairs(config.restrictedFactions) do
-        if (factionId == v.id) then
+    print("Vehicle")
+    for key in pairs(config.emergency) do
+        if (factionId == key) then
             local user = GetUserIdentifers(source)
-            for k, v2 in pairs(factionVehicles[factionId]) do
-                if ((v2.stored or v2.impounded) and v2.owner == user.id and v2.garageId == garageId) then
-                    vehicles[k] = v2
+            for k, v in pairs(factionVehicles[factionId]) do
+                if ((v.stored or v.impounded) and v.owner == user.id and v.garageId == tostring(garageId)) then
+                    vehicles[k] = v
                 end
             end
 
@@ -183,20 +187,21 @@ function AddVehicleToFactionCache(userId, garageId, data)
     }
 end
 
-function StoreVehicleIntoGarage(garageId, faction, plate, properties, factionId)
-    if (faction.fid ~= factionId) then return end
+function StoreVehicleIntoGarage(playerId, garageId, faction, plate, properties, factionId)
+    if (faction.fid ~= factionId) then return false end
     if (not factionVehicles[factionId]) then
         factionVehicles[factionId] = {}
     end
 
     if (not factionVehicles[factionId][plate]) then
-        local user = GetUserIdentifers(_source)
-        if (not userVehicles[user.id] or not userVehicles[user.id].plates or not userVehicles[user.id].plates[plate]) then
-            TriggerClientEvent("notification:createNotification", _source, {type = "error", text = "Ez nem a te járműved!", duration = 5})
-            return
+        local user = GetUserIdentifers(playerId)
+        local userVehicles = GetUserVehicles(user.id)
+        if (not userVehicles or not userVehicles.plates or not userVehicles.plates[plate]) then
+            TriggerClientEvent("notification:createNotification", playerId, {type = "error", text = "Ez nem a te járműved!", duration = 5})
+            return false
         end
 
-        factionVehicles[factionId][plate] = userVehicles[user.id].plates[plate].vehicle
+        factionVehicles[factionId][plate] = userVehicles.plates[plate].vehicle
     end
 
     local vehicle = factionVehicles[factionId][plate]
@@ -211,6 +216,9 @@ function StoreVehicleIntoGarage(garageId, faction, plate, properties, factionId)
         factionId = factionId,
         properties = vehicleProperties
     })
+
+
+    return true
 end
 
 function RemoveVehicleFromFactionVehicles(faction, plate)
@@ -227,4 +235,21 @@ function SetVehicleIntoFactionGarage(userId, factionId, plate)
     if (factionVehicles[factionId] and factionVehicles[factionId][plate]) then
         factionVehicles[factionId][plate] = GetUserVehicle(userId, plate)
     end
+end
+
+function DoesFactionOwnVehicle(playerId, plate)
+    local faction = exports["fraction"]:get(playerId)
+
+    if (not faction) then return false end
+    if (not faction.fid) then return false end
+    if (not plate) then return false end
+
+    local factionId = tostring(faction.fid)
+
+    if (not factionVehicles[factionId]) then return false end
+    if (not factionVehicles[factionId][plate]) then return false end
+    if (factionVehicles[factionId][plate].plate ~= plate) then return false end
+
+
+    return true
 end

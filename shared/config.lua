@@ -10,12 +10,14 @@ config = {
             model = "cs_priest"
         }
     },
-
-    restrictedFactions = {
-        -- {
-        --     id = "1",
-        --     label = "PD"
-        -- }
+    emergencyVehicles = {
+        [GetHashKey("rmodramtrxp")] = true,
+        [GetHashKey("npolvic")] = true,
+        [GetHashKey("npolchar")] = true,
+        [GetHashKey("npolchal")] = true
+    },
+    emergency = {
+        ["1"] = true
     },
 
     locations = {
